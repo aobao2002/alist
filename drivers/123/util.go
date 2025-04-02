@@ -64,7 +64,8 @@ func signPath(path string, os string, version string) (k string, v string) {
 func GetApi(rawUrl string) string {
 	u, _ := url.Parse(rawUrl)
 	query := u.Query()
-	query.Add(signPath(u.Path, "web", "3"))
+	k, v := signPath(u.Path, "android", "3")
+	query.Add(k, v)
 	u.RawQuery = query.Encode()
 	return u.String()
 }
@@ -194,16 +195,15 @@ func (d *Pan123) login() error {
 //	return &authKey, nil
 //}
 
+// 将request方法改为大写的Request，使其成为导出方法
 func (d *Pan123) Request(url string, method string, callback base.ReqCallback, resp interface{}) ([]byte, error) {
-	isRetry := false
-do:
 	req := base.RestyClient.R()
 	req.SetHeaders(map[string]string{
 		"origin":        "https://www.123pan.com",
 		"referer":       "https://www.123pan.com/",
 		"authorization": "Bearer " + d.AccessToken,
-		"user-agent":    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) alist-client",
-		"platform":      "web",
+		"user-agent":    "123pan/v2.4.0(Android_7.1.2;Xiaomi)",
+		"platform":      "android",
 		"app-version":   "3",
 		//"user-agent":    base.UserAgent,
 	})
@@ -213,11 +213,6 @@ do:
 	if resp != nil {
 		req.SetResult(resp)
 	}
-	//authKey, err := authKey(url)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//req.SetQueryParam("auth-key", *authKey)
 	res, err := req.Execute(method, GetApi(url))
 	if err != nil {
 		return nil, err
@@ -225,17 +220,21 @@ do:
 	body := res.Body()
 	code := utils.Json.Get(body, "code").ToInt()
 	if code != 0 {
-		if !isRetry && code == 401 {
+		if code == 401 {
 			err := d.login()
 			if err != nil {
 				return nil, err
 			}
-			isRetry = true
-			goto do
+			return d.Request(url, method, callback, resp)
 		}
 		return nil, errors.New(jsoniter.Get(body, "message").ToString())
 	}
 	return body, nil
+}
+
+// 添加一个小写的request方法，调用大写的Request方法
+func (d *Pan123) request(url string, method string, callback base.ReqCallback, resp interface{}) ([]byte, error) {
+	return d.Request(url, method, callback, resp)
 }
 
 func (d *Pan123) getFiles(ctx context.Context, parentId string, name string) ([]File, error) {
